@@ -1,7 +1,9 @@
 import logging
 import imaplib
 import email
+from email import policy
 import openai
+import eons
 from ebbs import Builder
 
 class get_email(Builder):
@@ -22,8 +24,9 @@ class get_email(Builder):
 		this.optionalKWArgs['openai_engine'] = 'davinci'
 		this.optionalKWArgs['openai_max_tokens'] = 500
 		this.optionalKWArgs['openai_temperature'] = 0.9
+		this.optionalKWArgs['openai_prompt'] = "Please give me the executive summary of what's important in this email, without any technical information:"
 		
-		this.mail = []
+		this.emails = []
 		
 
 	def Build(this):
@@ -36,19 +39,23 @@ class get_email(Builder):
 		_, data = this.mail.search(None, this.search)
 		for num in data[0].split():
 			_, rawMessage = this.mail.fetch(num, '(RFC822)')
-			message = email.message_from_bytes(rawMessage[0][1])
+			message = email.message_from_bytes(rawMessage[0][1], policy=policy.default)
+			try:
+				body = message.get_body(preferencelist=('plain')).as_string()
+			except:
+				body = None
 
 			summary = None
-			if (this.summarize):
-				summary = this.GetEmailSummary(message.get_payload())
+			if (this.summarize and body):
+				summary = this.GetEmailSummary(body)
 
-			this.mail.append({
+			this.emails.append(eons.util.DotDict({
 				'from': message['From'],
 				'to': message['To'],
 				'subject': message['Subject'],
-				'body': message.get_payload(),
+				'body': body,
 				'summary': summary
-			})
+			}))
 			
 			# logging.info('Message %s: %s' % (num, msg['Subject']))
 			if this.mark_as_read:
@@ -60,16 +67,19 @@ class get_email(Builder):
 		this.mail.close()
 		this.mail.logout()
 
-		return this.mail
+		return this.emails
 	
 
 	def GetEmailSummary(this, message):
 		if this.openai_api_key is None:
 			raise Exception('OpenAI API Key is not set')
+		if (len(message) > 2048):
+			message = message[:2048]
+		logging.debug(f"Getting summary for: {message}")
 		openai.api_key = this.openai_api_key
 		response = openai.Completion.create(
 			engine = this.openai_engine,
-			prompt = f"Please summarize the following email.\n {message}",
+			prompt = f"{this.openai_prompt} \n{message}",
 			max_tokens = this.openai_max_tokens,
 			temperature = this.openai_temperature,
 			top_p = 1,
@@ -80,9 +90,5 @@ class get_email(Builder):
 			presence_penalty = 0,
 			frequency_penalty = 0,
 			best_of = 1,
-			logit_bias = None,
-			echo = False,
-			user = None,
-			kwargs = None
 		)
 		return response['choices'][0]['text']
