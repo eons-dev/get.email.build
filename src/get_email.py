@@ -4,6 +4,7 @@ import email
 from email import policy
 import openai
 import eons
+from markdownify import markdownify
 from ebbs import Builder
 
 class get_email(Builder):
@@ -24,7 +25,7 @@ class get_email(Builder):
 		this.optionalKWArgs['openai_engine'] = 'davinci'
 		this.optionalKWArgs['openai_max_tokens'] = 500
 		this.optionalKWArgs['openai_temperature'] = 0.9
-		this.optionalKWArgs['openai_prompt'] = "Please give me the executive summary of what's important in this email, without any technical information:"
+		this.optionalKWArgs['openai_prompt'] = "Ignoring any html, please give me the executive summary of what's important in this email:"
 		
 		this.emails = []
 		
@@ -41,7 +42,8 @@ class get_email(Builder):
 			_, rawMessage = this.mail.fetch(num, '(RFC822)')
 			message = email.message_from_bytes(rawMessage[0][1], policy=policy.default)
 			try:
-				body = message.get_body(preferencelist=('plain')).as_string()
+				body = message.get_body(preferencelist=('plain', 'html')).as_string()
+				body = markdownify(body, convert=['p', 'b', 'i', 'strong', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'ul', 'ol', 'li', 'br', 'hr', 'blockquote', 'code', 'pre'])
 			except:
 				body = None
 
@@ -58,11 +60,11 @@ class get_email(Builder):
 			}))
 			
 			# logging.info('Message %s: %s' % (num, msg['Subject']))
-			if this.mark_as_read:
+			if (this.mark_as_read):
 				this.mail.store(num, '+FLAGS', '\\Seen')
-			if this.delete:
+			if (this.delete):
 				this.mail.store(num, '+FLAGS', '\\Deleted')
-		if this.delete:
+		if (this.delete):
 			this.mail.expunge()
 		this.mail.close()
 		this.mail.logout()
