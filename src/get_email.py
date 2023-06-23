@@ -4,6 +4,7 @@ import email
 from email import policy
 import openai
 import eons
+import re
 from markdownify import markdownify
 from ebbs import Builder
 
@@ -25,7 +26,7 @@ class get_email(Builder):
 		this.optionalKWArgs['openai_engine'] = 'davinci'
 		this.optionalKWArgs['openai_max_tokens'] = 500
 		this.optionalKWArgs['openai_temperature'] = 0.9
-		this.optionalKWArgs['openai_prompt'] = "Ignoring any html, please give me the executive summary of what's important in this email:"
+		this.optionalKWArgs['openai_prompt'] = "Please summarize this email in one sentence:"
 		
 		this.emails = []
 		
@@ -43,6 +44,8 @@ class get_email(Builder):
 			message = email.message_from_bytes(rawMessage[0][1], policy=policy.default)
 			try:
 				body = message.get_body(preferencelist=('plain', 'html')).as_string()
+				body = this.StripHeaders(body)
+				body = this.StripGoogleGroupFooter(body)
 				body = markdownify(body, convert=['p', 'b', 'i', 'strong', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'ul', 'ol', 'li', 'br', 'hr', 'blockquote', 'code', 'pre'])
 			except:
 				body = None
@@ -71,6 +74,18 @@ class get_email(Builder):
 
 		return this.emails
 	
+
+	def StripHeaders(this, message):
+		for iter,line in enumerate(message.split('\n')):
+			if (not re.match(r'^\s.*$', line) and not re.match(r'[a-zA-Z-]+:.*$', line)):
+				logging.debug(f"Trimming the first {iter} lines from message to remove headers")
+				return '\n'.join(message.split('\n')[iter:])
+
+	def StripGoogleGroupFooter(this, message):
+		for iter,line in enumerate(message.split('\n')):
+			if (re.match(r'^You received this message because.*$', line)):
+				return '\n'.join(message.split('\n')[:iter])
+
 
 	def GetEmailSummary(this, message):
 		if this.openai_api_key is None:
